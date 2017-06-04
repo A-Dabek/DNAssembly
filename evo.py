@@ -6,7 +6,6 @@ spectrum = []  # fragments of DNA sequence
 cached = {}  # cached overlapping value for dna fragments
 n, l = 0, 0  # power of spectrum and length of an element
 
-
 def overlap(string1, string2):
     c = cached[string1].get(string2, None)  # check if overlap was already found
     if c is not None:
@@ -46,31 +45,28 @@ class GeneticAlgorithm:
         self.size = population_size
         self.iterations_to_wait = iterations_without_improvement
         self.mutation_chance = mutation_chance
-
         self.population = []
         self.best_gene = None
 
     def compute(self, verbose=False):  # main function
         self.population = [Gene() for _ in range(self.size)]  # generate population
         self.best_gene = copy.deepcopy(self.population[0])  # assume first one is the best
-
         no_progress = 0  # iterations without progress
+        TIMESTAMP = time.time()
+        time_result = 0
         while self.iterations_to_wait - no_progress > 0:  # run until there is no improvement
             # sort population basing on length of their sequence
-            self.population.sort(key=lambda x: x.get_value() + x.get_solution()[0], reverse=True)
-
+            self.population.sort(key=lambda x: x.get_value(), reverse=True)
             no_progress += 1  # assume there is no progress
             if self.is_improved():  # check if progress was made
+                time_result = time.time() - TIMESTAMP
                 best_value = self.best_gene.get_solution()
                 if verbose:
                     print(no_progress, best_value)
-                if best_value[0] >= n:  # finish if the solution uses entire spectrum
-                    break
                 no_progress = 0  # reset progress count
-
             self.create_new_generation()  # perform crossovers and add random new genes
             self.perform_mutations()  # perform mutations basing on a given chance percentage
-        return self.best_gene  # return the best gene ever!
+        return self.best_gene, time_result  # return the best gene ever!
 
     def is_improved(self):
         # check whether present best gene uses more spectrum elements than the best gene ever
@@ -81,7 +77,7 @@ class GeneticAlgorithm:
 
     def create_new_generation(self):
         crossovers = 0  # count the number of crossovers performed
-        while crossovers < self.size // 2:  # create a fourth of an original size genes in crossovers
+        while crossovers < self.size // 4:  # create a fourth of an original size genes in crossovers
             first_parent = second_parent = random.randint(0, self.size - 1)  # get random parents
             while first_parent == second_parent:  # ensure that parents are not duplicate elements
                 second_parent = random.randint(0, self.size - 1)
@@ -234,18 +230,17 @@ if __name__ == '__main__':
                 line = file.readline().replace('\n', '')
             n = len(spectrum)
             l = len(spectrum[0])
-            ppl = 100
-            iters = 100
+            ppl = n
+            iters = (1000-n)//4
             print(str.format('file: {0}, n = {1}, l = {2}', file_name, n, l))
             print('Population: ' + str(ppl) + ' for ' + str(iters))
-            start_stamp = time.time()
-            result_gene = GeneticAlgorithm(ppl, iters, 0.25).compute(verbose=True)
+            result_gene, time_r = GeneticAlgorithm(ppl, iters, 0.25).compute(verbose=True)
             print(str.format('{0} elements out of {1} in {2} seconds',
                              result_gene.get_solution()[0],
                              n,
-                             time.time() - start_stamp))
+                             time_r))
             result_file.write(str.format('{0};{1};{2:.3f}\n',
                                          n,
                                          result_gene.get_solution()[0],
-                                         time.time() - start_stamp).replace('.', ','))
+                                         time_r).replace('.', ','))
     result_file.close()
