@@ -1,8 +1,6 @@
 import random
 import copy
 import time
-import multiprocessing
-
 
 spectrum = []  # fragments of DNA sequence
 cached = {}  # cached overlapping value for dna fragments
@@ -52,21 +50,21 @@ class GeneticAlgorithm:
         self.population = []
         self.best_gene = None
 
-    def compute(self):  # main function
+    def compute(self, verbose=False):  # main function
         self.population = [Gene() for _ in range(self.size)]  # generate population
-        self.best_gene = copy.deepcopy(self.population[0])  # assume first one is best
+        self.best_gene = copy.deepcopy(self.population[0])  # assume first one is the best
 
         no_progress = 0  # iterations without progress
         while self.iterations_to_wait - no_progress > 0:  # run until there is no improvement
-
             # sort population basing on length of their sequence
-            self.population.sort(key=lambda x: x.get_solution()[0], reverse=True)
+            self.population.sort(key=lambda x: x.get_value() + x.get_solution()[0], reverse=True)
 
             no_progress += 1  # assume there is no progress
             if self.is_improved():  # check if progress was made
                 best_value = self.best_gene.get_solution()
-                print(no_progress, best_value)
-                if best_value[0] == n:  # finish if the solution uses entire spectrum
+                if verbose:
+                    print(no_progress, best_value)
+                if best_value[0] >= n:  # finish if the solution uses entire spectrum
                     break
                 no_progress = 0  # reset progress count
 
@@ -83,17 +81,14 @@ class GeneticAlgorithm:
 
     def create_new_generation(self):
         crossovers = 0  # count the number of crossovers performed
-        while crossovers < self.size // 4:  # create a fourth of an original size genes in crossovers
-            first_parent = second_parent = random.randint(0, self.size - crossovers - 1)  # get random parents
+        while crossovers < self.size // 2:  # create a fourth of an original size genes in crossovers
+            first_parent = second_parent = random.randint(0, self.size - 1)  # get random parents
             while first_parent == second_parent:  # ensure that parents are not duplicate elements
-                second_parent = random.randint(0, self.size - crossovers - 1)
+                second_parent = random.randint(0, self.size - 1)
             g1, g2 = self.population[first_parent], self.population[second_parent]
-            p = multiprocessing.Process(target=Gene.crossover,  # create new thread that will perform crossover
-                                        args=(g1, g2, self.population, self.size // 2 + crossovers))
-            p.start()
-            p.run()  # run new thread
+            Gene.crossover(g1, g2, self.population, self.size//2 + crossovers)  # perform crossover
             crossovers += 1
-        for i in range(self.size // 2 + crossovers, self.size):  # the weakest fourth of genes replace with random ones
+        for i in range(self.size//2 + crossovers, self.size):  # the weakest fourth of genes replace with random ones
             self.population[i] = Gene()
 
     def perform_mutations(self):
@@ -108,10 +103,10 @@ class Gene:
         neigh_list = {}  # adjacency list
         length = len(g1.permutation)  # expected length of a child
         for i, base in enumerate(g1.permutation):  # create nodes
-            neigh_list[base] = [g1.permutation[i - 1], g1.permutation[(i + 1) % length]]
+            neigh_list[base] = {g1.permutation[i - 1], g1.permutation[(i + 1) % length]}
         for i, base in enumerate(g2.permutation):  # add neighbours to each node
-            neigh_list[base].append(g2.permutation[i - 1])
-            neigh_list[base].append(g2.permutation[(i + 1) % length])
+            neigh_list[base].add(g2.permutation[i - 1])
+            neigh_list[base].add(g2.permutation[(i + 1) % length])
 
         # a starting point of a child is a starting point of one of the parents
         neigh_chosen = [g1.permutation[0], g2.permutation[0]][random.randint(0, 1)]
@@ -132,18 +127,24 @@ class Gene:
             del neigh_list[neigh_chosen]  # delete list of the chosen node
             if len(min_neigh_list) > 0:  # if the chosen node has any neighbours
                 # get the best match out of neighbours as next
-                neigh_chosen = max(min_neigh_list, key=lambda x: overlap(neigh_chosen, x))
+                max_overlap = overlap(neigh_chosen, max(min_neigh_list, key=lambda x: overlap(neigh_chosen, x)))
+                possibilities = list(filter(lambda x: overlap(neigh_chosen, x) == max_overlap, min_neigh_list))
+                neigh_chosen = possibilities[random.randint(0, len(possibilities) - 1)]
             else:
                 # get the best match out of every node as next
-                neigh_chosen = max(neigh_list.keys(), key=lambda x: overlap(neigh_chosen, x))
+                max_overlap = overlap(neigh_chosen, max(neigh_list, key=lambda x: overlap(neigh_chosen, x)))
+                possibilities = list(filter(lambda x: overlap(neigh_chosen, x) == max_overlap, neigh_list))
+                neigh_chosen = possibilities[random.randint(0, len(possibilities) - 1)]
+
             child.append(neigh_chosen)  # add the node to the solution
         arr[ind] = Gene(child)
 
     def __init__(self, permutation=None):
-        self.permutation = permutation
-        if self.permutation is None:  # if the permutation is not provided, shuffle the entire spectrum
+        if permutation is None:  # if the permutation is not provided, shuffle the entire spectrum
             self.permutation = list(spectrum)
             random.shuffle(self.permutation)
+        else:
+            self.permutation = list(permutation)
         self.value_is_valid = False
         self.value = 0
         self.solution_is_valid = False
@@ -182,21 +183,23 @@ class Gene:
     def mutate(self):
         solution = self.get_solution()
         seq_s, seq_f = solution[1]  # get the slice with the best result
-        minimal = (-1, 0, -1)  # replace index / with overlap / with index
+        minimal = (-1, 0, -1, 0)  # replace index / with overlap / with index
         for i in range(seq_s, min(seq_f, len(self.permutation) - 2)):  # for every element in the solution slice
-            if overlap(self.permutation[i], self.permutation[i + 1]) == l - 1:  # if the match is perfect
+            iteration_overlap = overlap(self.permutation[i], self.permutation[i + 1]) + \
+                                overlap(self.permutation[i + 1], self.permutation[i + 2])
+            if iteration_overlap == 2 * (l - 1):  # if the match is perfect
                 continue
             for j in range(0, seq_s):  # for every element before slice
                 # check if the fragment out of the slice fits better then some one from the slice
                 total_overlap = overlap(self.permutation[i], self.permutation[j]) + overlap(self.permutation[j],
                                                                                             self.permutation[i + 2])
-                if minimal[1] < total_overlap:
-                    minimal = (j, total_overlap, i + 1)
+                if minimal[1] < total_overlap and total_overlap > iteration_overlap:
+                    minimal = (j, total_overlap, i + 1, iteration_overlap)
             for j in range(seq_f, len(self.permutation)):  # for every element after slice do the same
                 total_overlap = overlap(self.permutation[i], self.permutation[j]) + overlap(self.permutation[j],
                                                                                             self.permutation[i + 2])
-                if minimal[1] < total_overlap:
-                    minimal = (j, total_overlap, i + 1)
+                if minimal[1] < total_overlap and total_overlap > iteration_overlap:
+                    minimal = (j, total_overlap, i + 1, iteration_overlap)
             if minimal[1] >= (l - 1) * 2:  # if a perfect replacement was found
                 break
         if minimal[0] >= 0:  # if any fragment actually fits better, swap them
@@ -206,20 +209,23 @@ class Gene:
             self.permutation[rnd1] = self.permutation[rnd2]
             self.permutation[rnd2] = temp
             self.value_is_valid = False
+            self.solution_is_valid = False
 
 
 if __name__ == '__main__':
-    dict_test = {'end/': 12}  # ,
-    # 'neg/': 22,
-    # 'pos/': 12,
-    # 'rep/': 5}
+    dict_test = {'end/': 12,
+                 'neg/': 22,
+                 'pos/': 12,
+                 'rep/': 5}
     start_path = 'inst/'
+    result_file = open('results.txt', 'a')
 
     for k, v in dict_test.items():
+        result_file.write(k[:-1] + '\n')
         for i in range(1, v + 1):
             file_name = str.format('{0}{1}{2}.bin', start_path, k, i)
-            spectrum = []
             cached = {}
+            spectrum = []
             file = open(file_name)  # read an instance from file
             line = file.readline().replace('\n', '')
             while len(line) > 1:
@@ -229,24 +235,17 @@ if __name__ == '__main__':
             n = len(spectrum)
             l = len(spectrum[0])
             ppl = 100
+            iters = 100
             print(str.format('file: {0}, n = {1}, l = {2}', file_name, n, l))
-            print('Population: ' + str(ppl))
+            print('Population: ' + str(ppl) + ' for ' + str(iters))
             start_stamp = time.time()
-            result_gene = GeneticAlgorithm(ppl, n ** 2, 0.001).compute()
-            print(str.format('{0} elements out of {1} in {2} seconds', result_gene.get_solution()[0], n,
+            result_gene = GeneticAlgorithm(ppl, iters, 0.25).compute(verbose=True)
+            print(str.format('{0} elements out of {1} in {2} seconds',
+                             result_gene.get_solution()[0],
+                             n,
                              time.time() - start_stamp))
-
-            # RAW_DATA = 'AGTTCGCCCCAGTAATGTTGCCAATAAGGACCACCAAATCCGCATGTTACAGGACTTCTTATAAATTCTTTTTTCGTGGGGAGCAGCGGATCTTAATGGATGGCGCCAGCTGGTATGGAAGCTAATAGCGCCGGTGAGAGGGTAATCAGCCGTCTCCACCAACACAACGCTATCGGGTCATATTATAAGATTCCGCAATGGGACTACTTATAGGTTGCCTTAACGATATCCGCAACTTGCGATGTGCCTGCTATGCTTAAATACATACCTCGCCCAGTAGCTTTCCAATATGGGAACATCAATTGTACATCGGGCCGGGATAATCATGTCGTCACGGAACTTACTGTAAGAGTAATAATTCAAAAGAGATGTCGGTTTGCTAGTTCACGTAAAGGTGCCTCGCGCCACCTCTAAGTAAGTGAGCCGTCGAGACATTATCCCTGATTTTCTCACTACTATTAGTACTCACGGCGCAATACCACCACAGCCTTGTCTCGCCAGAATGCCGGTCAGCATATGGAAGAGCTCAAGGCAGGTCAATTCGCACTGTGAGGGTCACATGGGCGTTTGGCACTACCGACACGAACCTCAGTTAGCGTACATCCTACCAGAGGTCTGTGGCCCCGTGGTCAAAAGTGCGGGTTTCGTATTTGCTGCTCGTCTGTACTTTCAGAATCTTGACCTGCACGGCAAAGAGACGCTTTTTATGGAGCTCGACATGGCAACAACGCGACGGATCTACGTCACAACGAGAATAGTGTAAACGAAGCTGCTGACGGCGGAAGCGACATAGGGATCTGTGAGTTGTTATTCGCGAAAAACATCCGTCCCCGTGGGGGATAGTCACTGACGCGGTTTTGTAGAAGCCTAGGGGAACAGGTTAGTTTGACTAGCTTAAGAATGTAAATTCTGGGATTATACTGTAGTAATCACTAATTAACGGTGAGGGTTTTAAGACGGATCTTTGCAAATTCAAGCGAGGTGATTTCAACAAATTTTG'
-            # l = 10
-            # n = 50
-            # for i in range(0, n):
-            #     spectrum.append(RAW_DATA[i:i + 10])
-            #     cached_distances[spectrum[i]] = {}
-            #
-            # print(RAW_DATA[:len(spectrum)+9])
-            # print((len(spectrum)-1)*(len(spectrum[0])-1))
-            #
-            # size = int(2*(n**0.5))
-            # print('Populacja: ' + str(size))
-            # result_gene = GeneticAlgorithm(100, 1000, 0.001).compute()
-            # print(result_gene.solution_value(), result_gene.get_solution(len(spectrum)+9), len(spectrum))
+            result_file.write(str.format('{0};{1};{2:.3f}\n',
+                                         n,
+                                         result_gene.get_solution()[0],
+                                         time.time() - start_stamp).replace('.', ','))
+    result_file.close()
