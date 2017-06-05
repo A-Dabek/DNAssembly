@@ -6,6 +6,7 @@ spectrum = []  # fragments of DNA sequence
 cached = {}  # cached overlapping value for dna fragments
 n, l = 0, 0  # power of spectrum and length of an element
 
+
 def overlap(string1, string2):
     c = cached[string1].get(string2, None)  # check if overlap was already found
     if c is not None:
@@ -47,6 +48,7 @@ class GeneticAlgorithm:
         self.mutation_chance = mutation_chance
         self.population = []
         self.best_gene = None
+        self.best_value = 0
 
     def compute(self, verbose=False):  # main function
         self.population = [Gene() for _ in range(self.size)]  # generate population
@@ -73,6 +75,9 @@ class GeneticAlgorithm:
         if self.population[0].get_solution()[0] > self.best_gene.get_solution()[0]:
             self.best_gene = copy.deepcopy(self.population[0])
             return True
+        if self.population[0].get_value() > self.best_value:
+            self.best_value = self.population[0].get_value()
+            return True
         return False
 
     def create_new_generation(self):
@@ -82,9 +87,9 @@ class GeneticAlgorithm:
             while first_parent == second_parent:  # ensure that parents are not duplicate elements
                 second_parent = random.randint(0, self.size - 1)
             g1, g2 = self.population[first_parent], self.population[second_parent]
-            Gene.crossover(g1, g2, self.population, self.size//2 + crossovers)  # perform crossover
+            Gene.crossover(g1, g2, self.population, self.size // 2 + crossovers)  # perform crossover
             crossovers += 1
-        for i in range(self.size//2 + crossovers, self.size):  # the weakest fourth of genes replace with random ones
+        for i in range(self.size // 2 + crossovers, self.size):  # the weakest fourth of genes replace with random ones
             self.population[i] = Gene()
 
     def perform_mutations(self):
@@ -109,17 +114,10 @@ class Gene:
         child = [neigh_chosen]
 
         while len(child) < length:  # run until child has desired length
-            min_length = 5  # each list has lower length than 5
-            min_neigh_list = []
             for k in neigh_list:  # for every node
                 if neigh_chosen in neigh_list[k]:  # remove a chosen fragment from the node
                     neigh_list[k].remove(neigh_chosen)
-                if k in neigh_list[neigh_chosen]:  # if a node is a neighbour of previously chosen
-                    if len(neigh_list[k]) < min_length:  # remember nodes with the fewest neighbours
-                        min_length = len(neigh_list[k])
-                        min_neigh_list = [k]
-                    elif len(neigh_list[k]) == min_length:
-                        min_neigh_list.append(k)
+            min_neigh_list = list(neigh_list[neigh_chosen])
             del neigh_list[neigh_chosen]  # delete list of the chosen node
             if len(min_neigh_list) > 0:  # if the chosen node has any neighbours
                 # get the best match out of neighbours as next
@@ -131,7 +129,6 @@ class Gene:
                 max_overlap = overlap(neigh_chosen, max(neigh_list, key=lambda x: overlap(neigh_chosen, x)))
                 possibilities = list(filter(lambda x: overlap(neigh_chosen, x) == max_overlap, neigh_list))
                 neigh_chosen = possibilities[random.randint(0, len(possibilities) - 1)]
-
             child.append(neigh_chosen)  # add the node to the solution
         arr[ind] = Gene(child)
 
@@ -174,9 +171,17 @@ class Gene:
             sequence += self.permutation[s + 1][common:]
         self.solution = slice[1] - slice[0] + 2, slice, sequence[:limit]
         self.solution_is_valid = True
-        return slice[1] - slice[0] + 2, slice, sequence[:limit]
+        return slice[1] - slice[0] + 1, slice, sequence[:limit]
 
-    def mutate(self):
+    def mutate(self, verbose=False):
+        rnd1 = random.randint(0, n-1)
+        rnd2 = random.randint(0, n-1)
+        temp = self.permutation[rnd1]
+        self.permutation[rnd1] = self.permutation[rnd2]
+        self.permutation[rnd2] = temp
+        self.value_is_valid = False
+        self.solution_is_valid = False
+        return
         solution = self.get_solution()
         seq_s, seq_f = solution[1]  # get the slice with the best result
         minimal = (-1, 0, -1, 0)  # replace index / with overlap / with index
@@ -199,6 +204,8 @@ class Gene:
             if minimal[1] >= (l - 1) * 2:  # if a perfect replacement was found
                 break
         if minimal[0] >= 0:  # if any fragment actually fits better, swap them
+            if verbose:
+                print(minimal)
             rnd1 = minimal[0]
             rnd2 = minimal[2]
             temp = self.permutation[rnd1]
@@ -231,10 +238,10 @@ if __name__ == '__main__':
             n = len(spectrum)
             l = len(spectrum[0])
             ppl = n
-            iters = (1000-n)//4
+            iters = (1000 - n) // 8
             print(str.format('file: {0}, n = {1}, l = {2}', file_name, n, l))
             print('Population: ' + str(ppl) + ' for ' + str(iters))
-            result_gene, time_r = GeneticAlgorithm(ppl, iters, 0.25).compute(verbose=True)
+            result_gene, time_r = GeneticAlgorithm(ppl, iters, 0.05).compute(verbose=True)
             print(str.format('{0} elements out of {1} in {2} seconds',
                              result_gene.get_solution()[0],
                              n,
