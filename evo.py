@@ -8,10 +8,6 @@ n, l = 0, 0  # power of spectrum and length of an element
 
 
 def overlap(string1, string2):
-    c = cached[string1].get(string2, None)  # check if overlap was already found
-    if c is not None:
-        return c
-    # otherwise perform algorithm
     t = compute_back_track_table(string2)
     m, i = 0, 0
     while m + i < len(string1):
@@ -21,7 +17,6 @@ def overlap(string1, string2):
             m += i - t[i]
             if i > 0:
                 i = t[i]
-    cached[string1][string2] = i  # remember the overlap value
     return i
 
 
@@ -48,7 +43,6 @@ class GeneticAlgorithm:
         self.mutation_chance = mutation_chance
         self.population = []
         self.best_gene = None
-        self.best_value = 0
 
     def compute(self, verbose=False):  # main function
         self.population = [Gene() for _ in range(self.size)]  # generate population
@@ -62,9 +56,8 @@ class GeneticAlgorithm:
             no_progress += 1  # assume there is no progress
             if self.is_improved():  # check if progress was made
                 time_result = time.time() - TIMESTAMP
-                best_value = self.best_gene.get_solution()
                 if verbose:
-                    print(no_progress, best_value)
+                    print(no_progress, self.best_gene.get_solution())
                 no_progress = 0  # reset progress count
             self.create_new_generation()  # perform crossovers and add random new genes
             self.perform_mutations()  # perform mutations basing on a given chance percentage
@@ -74,9 +67,6 @@ class GeneticAlgorithm:
         # check whether present best gene uses more spectrum elements than the best gene ever
         if self.population[0].get_solution()[0] > self.best_gene.get_solution()[0]:
             self.best_gene = copy.deepcopy(self.population[0])
-            return True
-        if self.population[0].get_value() > self.best_value:
-            self.best_value = self.population[0].get_value()
             return True
         return False
 
@@ -121,14 +111,15 @@ class Gene:
             del neigh_list[neigh_chosen]  # delete list of the chosen node
             if len(min_neigh_list) > 0:  # if the chosen node has any neighbours
                 # get the best match out of neighbours as next
-                max_overlap = overlap(neigh_chosen, max(min_neigh_list, key=lambda x: overlap(neigh_chosen, x)))
-                possibilities = list(filter(lambda x: overlap(neigh_chosen, x) == max_overlap, min_neigh_list))
+                max_overlap = cached[neigh_chosen][max(min_neigh_list, key=lambda x: cached[neigh_chosen][x])]
+                possibilities = list(filter(lambda x: cached[neigh_chosen][x] == max_overlap, min_neigh_list))
                 neigh_chosen = possibilities[random.randint(0, len(possibilities) - 1)]
             else:
                 # get the best match out of every node as next
-                max_overlap = overlap(neigh_chosen, max(neigh_list, key=lambda x: overlap(neigh_chosen, x)))
-                possibilities = list(filter(lambda x: overlap(neigh_chosen, x) == max_overlap, neigh_list))
+                max_overlap = cached[neigh_chosen][max(neigh_list, key=lambda x: cached[neigh_chosen][x])]
+                possibilities = list(filter(lambda x: cached[neigh_chosen][x] == max_overlap, neigh_list))
                 neigh_chosen = possibilities[random.randint(0, len(possibilities) - 1)]
+
             child.append(neigh_chosen)  # add the node to the solution
         arr[ind] = Gene(child)
 
@@ -147,7 +138,7 @@ class Gene:
         if not self.value_is_valid:
             self.value = 0
             for codon in range(len(self.permutation) - 1):
-                self.value += overlap(self.permutation[codon], self.permutation[codon + 1])
+                self.value += cached[self.permutation[codon]][self.permutation[codon + 1]]
             self.value_is_valid = True
         return self.value
 
@@ -157,7 +148,7 @@ class Gene:
         limit = n + l - 1  # maximum length of a sequence
         sequence = self.permutation[0]
         # count the overlap between fragments
-        fits = [overlap(self.permutation[s], self.permutation[s + 1]) for s in range(len(self.permutation) - 1)]
+        fits = [cached[self.permutation[s]][self.permutation[s + 1]] for s in range(len(self.permutation) - 1)]
         slice = (0, 0)
         for initial in range(len(fits)):  # for every initial position
             for final in range(initial + slice[1] - slice[0], len(fits)):  # for every (not worse) final position
@@ -167,13 +158,13 @@ class Gene:
                 if final - initial > slice[1] - slice[0]:  # if the slice covers more than previous
                     slice = (initial, final)
         for s in range(slice[0], slice[1] + 1):  # assemble the fragments covered by the slice
-            common = overlap(self.permutation[s], self.permutation[s + 1])
+            common = cached[self.permutation[s]][self.permutation[s + 1]]
             sequence += self.permutation[s + 1][common:]
         self.solution = slice[1] - slice[0] + 2, slice, sequence[:limit]
         self.solution_is_valid = True
         return slice[1] - slice[0] + 1, slice, sequence[:limit]
 
-    def mutate(self, verbose=False):
+    def mutate(self):
         rnd1 = random.randint(0, n-1)
         rnd2 = random.randint(0, n-1)
         temp = self.permutation[rnd1]
@@ -181,39 +172,6 @@ class Gene:
         self.permutation[rnd2] = temp
         self.value_is_valid = False
         self.solution_is_valid = False
-        return
-        solution = self.get_solution()
-        seq_s, seq_f = solution[1]  # get the slice with the best result
-        minimal = (-1, 0, -1, 0)  # replace index / with overlap / with index
-        for i in range(seq_s, min(seq_f, len(self.permutation) - 2)):  # for every element in the solution slice
-            iteration_overlap = overlap(self.permutation[i], self.permutation[i + 1]) + \
-                                overlap(self.permutation[i + 1], self.permutation[i + 2])
-            if iteration_overlap == 2 * (l - 1):  # if the match is perfect
-                continue
-            for j in range(0, seq_s):  # for every element before slice
-                # check if the fragment out of the slice fits better then some one from the slice
-                total_overlap = overlap(self.permutation[i], self.permutation[j]) + overlap(self.permutation[j],
-                                                                                            self.permutation[i + 2])
-                if minimal[1] < total_overlap and total_overlap > iteration_overlap:
-                    minimal = (j, total_overlap, i + 1, iteration_overlap)
-            for j in range(seq_f, len(self.permutation)):  # for every element after slice do the same
-                total_overlap = overlap(self.permutation[i], self.permutation[j]) + overlap(self.permutation[j],
-                                                                                            self.permutation[i + 2])
-                if minimal[1] < total_overlap and total_overlap > iteration_overlap:
-                    minimal = (j, total_overlap, i + 1, iteration_overlap)
-            if minimal[1] >= (l - 1) * 2:  # if a perfect replacement was found
-                break
-        if minimal[0] >= 0:  # if any fragment actually fits better, swap them
-            if verbose:
-                print(minimal)
-            rnd1 = minimal[0]
-            rnd2 = minimal[2]
-            temp = self.permutation[rnd1]
-            self.permutation[rnd1] = self.permutation[rnd2]
-            self.permutation[rnd2] = temp
-            self.value_is_valid = False
-            self.solution_is_valid = False
-
 
 if __name__ == '__main__':
     dict_test = {'end/': 12,
@@ -231,21 +189,30 @@ if __name__ == '__main__':
             spectrum = []
             file = open(file_name)  # read an instance from file
             line = file.readline().replace('\n', '')
+
             while len(line) > 1:
                 spectrum.append(line)
                 cached[line] = {}  # prepare cached overlap structure
                 line = file.readline().replace('\n', '')
+
+            for s in cached:  # fill dictionary of overlapping fragments
+                for ss in spectrum:
+                    cached[s][ss] = overlap(s, ss)
+
             n = len(spectrum)
             l = len(spectrum[0])
             ppl = n
             iters = (1000 - n) // 8
             print(str.format('file: {0}, n = {1}, l = {2}', file_name, n, l))
             print('Population: ' + str(ppl) + ' for ' + str(iters))
+
             result_gene, time_r = GeneticAlgorithm(ppl, iters, 0.05).compute(verbose=True)
+
             print(str.format('{0} elements out of {1} in {2} seconds',
                              result_gene.get_solution()[0],
                              n,
                              time_r))
+
             result_file.write(str.format('{0};{1};{2:.3f}\n',
                                          n,
                                          result_gene.get_solution()[0],
