@@ -76,9 +76,6 @@ class GeneticAlgorithm:
         if self.assemble_fragments(self.population[self.order[-1]])[0] > self.assemble_fragments(self.best_gene)[0]:
             self.best_gene = self.population[self.order[-1]]
             return True
-        if self.population[self.order[-1]][n] > self.best_value:
-            self.best_value = self.population[self.order[-1]][n]
-            return True
         return False
 
     def create_new_generation(self):
@@ -123,18 +120,11 @@ class GeneticAlgorithm:
         child_size += 1
 
         while child_size < n:  # run until child has desired length
-            min_length = 5  # each list has lower length than 5
-            min_neigh_list = []
             # min_neigh_list = -1
             for k in neigh_list:
                 if neigh_chosen in neigh_list[k]:
                     neigh_list[k].remove(neigh_chosen)
-            for k in neigh_list[neigh_chosen]:  # if a node is a neighbour of previously chosen
-                if len(neigh_list[k]) < min_length:  # remember nodes with the fewest neighbours
-                    min_length = len(neigh_list[k])
-                    min_neigh_list = [k]
-                elif len(neigh_list[k]) == min_length:
-                    min_neigh_list.append(k)
+            min_neigh_list = list(neigh_list[neigh_chosen])
             del neigh_list[neigh_chosen]  # delete list of the chosen node
             if len(min_neigh_list) > 0:  # if the chosen node has any neighbours
                 # get the best match out of neighbours as next
@@ -151,43 +141,12 @@ class GeneticAlgorithm:
             child_size += 1
         self.population[at, 0:n] = child
         self.population[at, n] = 0
-        #     for k in range(n):
-        #         for nei in range(4):
-        #             if neigh_list[k, nei] == neigh_chosen:
-        #                 neigh_list[k, nei] = -1
-        #                 neigh_list[k, 4] -= 1
-        #     for k in neigh_list[neigh_chosen, :4]:
-        #         if k == -1:
-        #             continue
-        #         no_of_neighbours = np.count_nonzero(np.unique(neigh_list[k, :4]) != -1)
-        #         if no_of_neighbours < min_length:
-        #             min_length = no_of_neighbours
-        #             min_neigh_list = k
-        #         elif no_of_neighbours == min_length:
-        #             if cached[neigh_chosen][min_neigh_list] < cached[neigh_chosen][k]:
-        #                 min_neigh_list = k
-        #             elif cached[neigh_chosen][min_neigh_list] == cached[neigh_chosen][k] and random.random() > 0.5:
-        #                 min_neigh_list = k
-        #     neigh_list[neigh_chosen, :] = -1
-        #
-        #     if min_neigh_list == -1:
-        #         for k in range(n):
-        #             if neigh_list[k, 4] != -1 and cached[neigh_chosen, k] > min_length:
-        #                 min_length = cached[neigh_chosen, k]
-        #                 min_neigh_list = k
-        #         neigh_chosen = min_neigh_list
-        #     else:
-        #         neigh_chosen = min_neigh_list
-        #     child[child_size] = neigh_chosen
-        #     child_size += 1
-        # self.population[at, :n] = child
 
     @staticmethod
     def assemble_fragments(sequence):  # get the slice with the best sum of overlaps
         limit = n + l - 1  # maximum length of a sequence
         # count the overlap between fragments
         fits = np.zeros(shape=(len(sequence)-2, ), dtype=np.int16)
-        assembled = ''
         for i in range(len(fits) - 1):
             fits[i] = cached[sequence[i], sequence[(i+1) % n]]
         r_slice = (0, 0)
@@ -203,64 +162,6 @@ class GeneticAlgorithm:
             common = cached[sequence[s], sequence[s+1]]
             assembled += str(spectrum[sequence[s+1]][common:])[3:-1]
         return r_slice[1] - r_slice[0] + 1, r_slice, assembled[:limit]
-
-    def mutate(self, row):
-        pass
-
-    # def get_solution(self):  # get the slice with the best sum of overlaps
-    #     if self.solution_is_valid:
-    #         return self.solution
-    #     limit = n + l - 1  # maximum length of a sequence
-    #     sequence = self.permutation[0]
-    #     # count the overlap between fragments
-    #     fits = [overlap(self.permutation[s], self.permutation[s + 1]) for s in range(len(self.permutation) - 1)]
-    #     slice = (0, 0)
-    #     for initial in range(len(fits)):  # for every initial position
-    #         for final in range(initial + slice[1] - slice[0], len(fits)):  # for every (not worse) final position
-    #             total = sum(fits[initial:final])
-    #             if (final - initial + 1) * l - total >= limit:  # check if the constraint is met
-    #                 break
-    #             if final - initial > slice[1] - slice[0]:  # if the slice covers more than previous
-    #                 slice = (initial, final)
-    #     for s in range(slice[0], slice[1] + 1):  # assemble the fragments covered by the slice
-    #         common = overlap(self.permutation[s], self.permutation[s + 1])
-    #         sequence += self.permutation[s + 1][common:]
-    #     self.solution = slice[1] - slice[0] + 2, slice, sequence[:limit]
-    #     self.solution_is_valid = True
-    #     return slice[1] - slice[0] + 2, slice, sequence[:limit]
-
-    # def mutate(self, verbose=False):
-    #     solution = self.get_solution()
-    #     seq_s, seq_f = solution[1]  # get the slice with the best result
-    #     minimal = (-1, 0, -1, 0)  # replace index / with overlap / with index
-    #     for i in range(seq_s, min(seq_f, len(self.permutation) - 2)):  # for every element in the solution slice
-    #         iteration_overlap = overlap(self.permutation[i], self.permutation[i + 1]) + \
-    #                             overlap(self.permutation[i + 1], self.permutation[i + 2])
-    #         if iteration_overlap == 2 * (l - 1):  # if the match is perfect
-    #             continue
-    #         for j in range(0, seq_s):  # for every element before slice
-    #             # check if the fragment out of the slice fits better then some one from the slice
-    #             total_overlap = overlap(self.permutation[i], self.permutation[j]) + overlap(self.permutation[j],
-    #                                                                                         self.permutation[i + 2])
-    #             if minimal[1] < total_overlap and total_overlap > iteration_overlap:
-    #                 minimal = (j, total_overlap, i + 1, iteration_overlap)
-    #         for j in range(seq_f, len(self.permutation)):  # for every element after slice do the same
-    #             total_overlap = overlap(self.permutation[i], self.permutation[j]) + overlap(self.permutation[j],
-    #                                                                                         self.permutation[i + 2])
-    #             if minimal[1] < total_overlap and total_overlap > iteration_overlap:
-    #                 minimal = (j, total_overlap, i + 1, iteration_overlap)
-    #         if minimal[1] >= (l - 1) * 2:  # if a perfect replacement was found
-    #             break
-    #     if minimal[0] >= 0:  # if any fragment actually fits better, swap them
-    #         if verbose:
-    #             print(minimal)
-    #         rnd1 = minimal[0]
-    #         rnd2 = minimal[2]
-    #         temp = self.permutation[rnd1]
-    #         self.permutation[rnd1] = self.permutation[rnd2]
-    #         self.permutation[rnd2] = temp
-    #         self.value_is_valid = False
-    #         self.solution_is_valid = False
 
 
 if __name__ == '__main__':
@@ -284,8 +185,8 @@ if __name__ == '__main__':
             for row in range(len(cached)):
                 for cell in range(len(cached[row])):
                     cached[row, cell] = overlap(spectrum[row], spectrum[cell])
-            ppl = 200
-            iters = 100
+            ppl = n
+            iters = (1000 - n) // 8
             print(str.format('file: {0}, n = {1}, l = {2}', file_name, n, l))
             print('Population: ' + str(ppl) + ' for ' + str(iters))
             result_gene, time_r = GeneticAlgorithm(ppl, iters, 0.25).compute(verbose=True)

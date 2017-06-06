@@ -145,7 +145,7 @@ class Gene:
     def get_solution(self):  # get the slice with the best sum of overlaps
         if self.solution_is_valid:
             return self.solution
-        limit = n + l - 1  # maximum length of a sequence
+        limit = n_limit + l - 1  # maximum length of a sequence
         sequence = self.permutation[0]
         # count the overlap between fragments
         fits = [cached[self.permutation[s]][self.permutation[s + 1]] for s in range(len(self.permutation) - 1)]
@@ -175,7 +175,7 @@ class Gene:
 
 if __name__ == '__main__':
     dict_test = {'end/': 12,
-                 'neg/': 22,
+                 'neg/': 24,
                  'pos/': 12,
                  'rep/': 5}
     start_path = 'inst/'
@@ -200,9 +200,24 @@ if __name__ == '__main__':
                     cached[s][ss] = overlap(s, ss)
 
             n = len(spectrum)
+            n_limit = n
+            if k == 'end/':
+                n_limit += 50
+                pass
+            elif k =='pos/':
+                while n_limit % 100 != 0:
+                    n_limit -= 40
+                pass
+            elif k == 'rep/':
+                n_limit += 32
+                pass
+            elif k == 'neg/':
+                n_limit = 200 + 100*((i-1)//6)
+                pass
+            n_limit = n_limit - (n_limit % 100)
             l = len(spectrum[0])
             ppl = n
-            iters = (1000 - n) // 8
+            iters = 25
             print(str.format('file: {0}, n = {1}, l = {2}', file_name, n, l))
             print('Population: ' + str(ppl) + ' for ' + str(iters))
 
@@ -213,8 +228,9 @@ if __name__ == '__main__':
                              n,
                              time_r))
 
-            result_file.write(str.format('{0};{1};{2:.3f}\n',
+            result_file.write(str.format('{0};{1};{2};{3:.3f}\n',
                                          n,
+                                         n_limit,
                                          result_gene.get_solution()[0],
                                          time_r).replace('.', ','))
     result_file.close()
